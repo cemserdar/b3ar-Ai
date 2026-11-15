@@ -1,0 +1,22 @@
+
+# >>> AI OLAF TEAM - LOCAL WORKSPACE & AGENT ISOLATION (DO NOT COMMIT) >>>
+.olaf/
+.agent/
+.agents/
+.gemini/
+.idx/
+AGENTS.md
+GEMINI.md
+.cursorrules
+.clinerules
+.github/copilot-instructions.md
+.vscode/tasks.json
+# <<< AI OLAF TEAM - LOCAL WORKSPACE & AGENT ISOLATION <<<
+
+# Dependencies & Build Artefacts
+node_modules/
+**/node_modules/
+.mcp/
+**/.mcp/
+*.log
+

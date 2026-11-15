@@ -1,0 +1,50 @@
+{
+  "name": "vscode-web-mcp",
+  "displayName": "Web-to-MCP AI Agent",
+  "description": "Tarayıcıdaki AI sekmelerini VS Code içinde otonom çoklu-ajan kodlama sistemine dönüştürür.",
+  "version": "2.0.0",
+  "publisher": "local-dev",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": [
+    "*",
+    "onStartupFinished",
+    "onView:webMcpChatView"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "web-mcp-sidebar",
+          "title": "Web-MCP Agent",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "web-mcp-sidebar": [
+        {
+          "type": "webview",
+          "id": "webMcpChatView",
+          "name": "AI Ajan Sohbeti"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "webMcp.focusChat",
+        "title": "Web-MCP: Sohbet Panelini Aç"
+      },
+      {
+        "command": "webMcp.cleanPorts",
+        "title": "Web-MCP: Kullanılmayan Portları Kapat & Yeniden Başlat"
+      }
+    ]
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
