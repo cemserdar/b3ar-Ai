@@ -2,16 +2,14 @@
   "name": "vscode-web-mcp",
   "displayName": "Web-to-MCP AI Agent",
   "description": "Tarayıcıdaki AI sekmelerini VS Code içinde otonom çoklu-ajan kodlama sistemine dönüştürür.",
-  "version": "2.0.0",
+  "version": "2.4.0",
   "publisher": "local-dev",
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": ["Other"],
   "activationEvents": [
-    "*",
-    "onStartupFinished",
-    "onView:webMcpChatView"
+    "onStartupFinished"
   ],
   "main": "./extension.js",
   "contributes": {
@@ -34,15 +32,69 @@
       ]
     },
     "commands": [
-      {
-        "command": "webMcp.focusChat",
-        "title": "Web-MCP: Sohbet Panelini Aç"
-      },
-      {
-        "command": "webMcp.cleanPorts",
-        "title": "Web-MCP: Kullanılmayan Portları Kapat & Yeniden Başlat"
+      { "command": "webMcp.setup", "title": "Kurulum Sihirbazı (Tarayıcı Eklentileri)", "category": "Web-MCP" },
+      { "command": "webMcp.focusChat", "title": "Sohbet Panelini Aç", "category": "Web-MCP" },
+      { "command": "webMcp.showMenu", "title": "Menüyü Göster", "category": "Web-MCP" },
+      { "command": "webMcp.cleanPorts", "title": "WebSocket Sunucusunu Yeniden Başlat", "category": "Web-MCP" },
+      { "command": "webMcp.copyToken", "title": "Bağlantı Token'ını Kopyala", "category": "Web-MCP" },
+      { "command": "webMcp.regenerateToken", "title": "Bağlantı Token'ını Yenile", "category": "Web-MCP" },
+      { "command": "webMcp.showLogs", "title": "Logları Göster", "category": "Web-MCP" },
+      { "command": "webMcp.browser.startHidden", "title": "Arka Plan Tarayıcısını Gizle / Gizli Başlat", "category": "Web-MCP" },
+      { "command": "webMcp.browser.showVisible", "title": "Arka Plan Tarayıcısını Görünür Aç (Giriş / Doğrulama)", "category": "Web-MCP" },
+      { "command": "webMcp.browser.stop", "title": "Arka Plan Tarayıcısını Durdur", "category": "Web-MCP" }
+    ],
+    "configuration": {
+      "title": "Web-MCP",
+      "properties": {
+        "webMcp.browser.executablePath": {
+          "type": "string",
+          "default": "",
+          "description": "Arka plan modu için Chrome/Chromium/Brave/Edge yürütülebilir dosya yolu. Boşsa otomatik bulunur."
+        },
+        "webMcp.browser.extensionPath": {
+          "type": "string",
+          "default": "",
+          "description": "Arka plan profiline yüklenecek tarayıcı eklentisi klasörü (manifest.json içeren). Boşsa VS Code eklentisinin yanındaki 'extension-chrome' kullanılır."
+        },
+        "webMcp.browser.startUrls": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Arka plan tarayıcısı açılırken yüklenecek AI sitesi adresleri. Boşsa son oturum geri yüklenir."
+        },
+        "webMcp.browser.autoStartHidden": {
+          "type": "boolean",
+          "default": false,
+          "description": "VS Code açıldığında arka plan tarayıcısını gizli modda otomatik başlat."
+        },
+        "webMcp.browser.autoShowOnChallenge": {
+          "type": "boolean",
+          "default": true,
+          "description": "Gizli moddayken giriş/CAPTCHA ekranı algılanırsa tarayıcıyı otomatik olarak görünür aç."
+        },
+        "webMcp.limits.maxPromptsPerHour": {
+          "type": "number",
+          "default": 60,
+          "minimum": 1,
+          "description": "AI sekmelerine bir saatte otomatik gönderilebilecek en fazla mesaj (hesap güvenliği için)."
+        },
+        "webMcp.limits.maxPromptsPerDay": {
+          "type": "number",
+          "default": 400,
+          "minimum": 1,
+          "description": "AI sekmelerine bir günde otomatik gönderilebilecek en fazla mesaj."
+        },
+        "webMcp.limits.minSecondsBetweenPrompts": {
+          "type": "number",
+          "default": 3,
+          "minimum": 0,
+          "description": "İki otomatik gönderim arasındaki en kısa süre (saniye)."
+        }
       }
-    ]
+    }
+  },
+  "scripts": {
+    "test": "node --test test/"
   },
   "dependencies": {
     "ws": "^8.18.0"

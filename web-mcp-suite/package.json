@@ -1,0 +1,16 @@
+{
+  "name": "web-mcp-suite",
+  "private": true,
+  "description": "Web-to-MCP: VS Code eklentisi + Chrome/Firefox köprü eklentileri (monorepo)",
+  "scripts": {
+    "build": "node scripts/build-browser.js",
+    "check": "node scripts/build-browser.js --check && npm --prefix vscode-web-mcp test",
+    "test": "npm --prefix vscode-web-mcp test",
+    "package": "node scripts/package.js",
+    "sign:firefox": "node scripts/sign-firefox.js",
+    "lint:firefox": "npx --yes web-ext@8 lint --source-dir extension-firefox"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

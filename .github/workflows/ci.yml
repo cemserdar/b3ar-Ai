@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: [20, 22]
+    defaults:
+      run:
+        working-directory: web-mcp-suite
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Bağımlılıklar
+        run: npm ci --prefix vscode-web-mcp
+      - name: Build güncel mi + testler
+        run: npm run check
+      - name: Firefox eklentisi lint
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
+        run: npm run lint:firefox
+
+  package:
+    needs: test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web-mcp-suite
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --prefix vscode-web-mcp
+      - name: Paket (.vsix + kurulum arşivi)
+        run: node scripts/package.js --skip-tests
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-mcp-suite
+          path: |
+            web-mcp-suite/dist/*.zip
+            web-mcp-suite/dist/*.vsix
