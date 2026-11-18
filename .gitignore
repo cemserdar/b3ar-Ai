@@ -20,3 +20,8 @@ node_modules/
 **/.mcp/
 *.log
 
+# Paketleme çıktıları (npm run package)
+web-mcp-suite/dist/
+web-mcp-suite/vscode-web-mcp/browser/
+*.vsix
+

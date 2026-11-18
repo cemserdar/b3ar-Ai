@@ -225,6 +225,7 @@
     <span>⚡ Web-to-MCP Agent</span>
     <div class="badge-group">
       <span id="connBadge" class="badge">🔴 Bağlantı Bekleniyor (Port 8766)...</span>
+      <button id="copyTokenBtn" class="icon-btn" title="Bağlantı token'ını kopyala (tarayıcı eklentisine yapıştırın)">🔑</button>
       <button id="restartWsBtn" class="icon-btn" title="WebSocket Sunucusunu Yenile">🔄</button>
     </div>
   </div>
@@ -376,14 +377,22 @@
         const codeHeader = document.createElement('div');
         codeHeader.className = 'code-header';
 
-        let pathBadgeHtml = '';
-        if (detectedPath) {
-          const badgeClass = isExisting ? 'target-badge exist' : 'target-badge new';
-          const badgeLabel = isExisting ? '🎯 ' + detectedPath : '✨ Yeni: ' + detectedPath;
-          pathBadgeHtml = '<span class="' + badgeClass + '" title="' + (isExisting ? 'Mevcut Dosya (Otomatik Güncellenir)' : 'Yeni Dosya (Otomatik Oluşturulur)') + '">' + badgeLabel + '</span>';
-        }
+        // AI kontrollü veriler (dil, dosya yolu) yalnızca textContent ile basılır (XSS koruması)
+        const headerLeft = document.createElement('div');
+        headerLeft.style.cssText = 'display:flex; align-items:center; gap:6px; flex-wrap:wrap;';
+        const langTag = document.createElement('span');
+        langTag.className = 'lang-tag';
+        langTag.textContent = lang.toUpperCase();
+        headerLeft.appendChild(langTag);
 
-        codeHeader.innerHTML = '<div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;"><span class="lang-tag">' + lang.toUpperCase() + '</span>' + pathBadgeHtml + '</div>';
+        if (detectedPath) {
+          const badge = document.createElement('span');
+          badge.className = isExisting ? 'target-badge exist' : 'target-badge new';
+          badge.title = isExisting ? 'Mevcut Dosya (Otomatik Güncellenir)' : 'Yeni Dosya (Otomatik Oluşturulur)';
+          badge.textContent = isExisting ? '🎯 ' + detectedPath : '✨ Yeni: ' + detectedPath;
+          headerLeft.appendChild(badge);
+        }
+        codeHeader.appendChild(headerLeft);
 
         const actions = document.createElement('div');
         actions.className = 'code-actions';
@@ -457,12 +466,16 @@
     }
 
     function renderChips() {
-      chipsContainer.innerHTML = '';
+      chipsContainer.replaceChildren();
       mentionedFiles.forEach(function(file) {
         const chip = document.createElement('div');
         chip.className = 'chip';
-        chip.innerHTML = '📄 ' + file + ' <span title="Kaldır">×</span>';
-        chip.querySelector('span').onclick = function() {
+        chip.appendChild(document.createTextNode('📄 ' + file + ' '));
+        const removeBtn = document.createElement('span');
+        removeBtn.title = 'Kaldır';
+        removeBtn.textContent = '×';
+        chip.appendChild(removeBtn);
+        removeBtn.onclick = function() {
           mentionedFiles.delete(file);
           renderChips();
         };
@@ -480,7 +493,7 @@
         closeMentionPopup();
         return;
       }
-      mentionPopup.innerHTML = '';
+      mentionPopup.replaceChildren();
       filteredFiles.slice(0, 20).forEach(function(file, idx) {
         const item = document.createElement('div');
         item.className = 'mention-item' + (idx === selectedIndex ? ' active' : '');
@@ -562,6 +575,10 @@
       }
     });
 
+    document.getElementById('copyTokenBtn').addEventListener('click', function() {
+      vscode.postMessage({ type: 'COPY_TOKEN' });
+    });
+
     document.getElementById('restartWsBtn').addEventListener('click', function() {
       vscode.postMessage({ type: 'RESTART_SERVER' });
     });
@@ -632,17 +649,26 @@
 
         const card = document.createElement('div');
         card.className = 'file-card';
-        card.innerHTML =
-          '<div class="file-title">📝 ' + msg.path + ' (' + msg.action + ')</div>' +
-          '<div class="btn-row">' +
-            '<button class="accept-btn">✔ Kabul Et</button>' +
-            '<button class="reject-btn">✖ Reddet (Geri Al)</button>' +
-          '</div>';
 
-        card.querySelector('.accept-btn').onclick = function() {
+        const title = document.createElement('div');
+        title.className = 'file-title';
+        title.textContent = '📝 ' + msg.path + ' (' + msg.action + ')';
+
+        const btnRow = document.createElement('div');
+        btnRow.className = 'btn-row';
+        const acceptBtn = document.createElement('button');
+        acceptBtn.className = 'accept-btn';
+        acceptBtn.textContent = '✔ Kabul Et';
+        const rejectBtn = document.createElement('button');
+        rejectBtn.className = 'reject-btn';
+        rejectBtn.textContent = '✖ Reddet (Geri Al)';
+        btnRow.append(acceptBtn, rejectBtn);
+        card.append(title, btnRow);
+
+        acceptBtn.onclick = function() {
           vscode.postMessage({ type: 'ACCEPT_DIFF', path: msg.path });
         };
-        card.querySelector('.reject-btn').onclick = function() {
+        rejectBtn.onclick = function() {
           vscode.postMessage({ type: 'REJECT_DIFF', path: msg.path });
         };
 
@@ -654,12 +680,15 @@
       if (msg.type === 'DIFF_RESOLVED') {
         const card = diffCards.get(msg.path);
         if (card) {
-          card.className = 'file-card ' + msg.status;
+          const accepted = msg.status === 'accepted';
+          card.className = 'file-card ' + (accepted ? 'accepted' : 'rejected');
           const btnRow = card.querySelector('.btn-row');
           if (btnRow) {
-            btnRow.innerHTML = msg.status === 'accepted'
-              ? '<span class="status-label" style="color:#a6e3a1;">✔ Değişiklik Onaylandı</span>'
-              : '<span class="status-label" style="color:#f38ba8;">✖ Geri Alındı</span>';
+            const label = document.createElement('span');
+            label.className = 'status-label';
+            label.style.color = accepted ? '#a6e3a1' : '#f38ba8';
+            label.textContent = accepted ? '✔ Değişiklik Onaylandı' : '✖ Geri Alındı';
+            btnRow.replaceChildren(label);
           }
           diffCards.delete(msg.path);
         }

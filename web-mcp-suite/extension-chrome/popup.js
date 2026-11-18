@@ -1,106 +1,143 @@
+// OTOMATİK ÜRETİLDİ — düzenlemeyin. Kaynak: src/browser/ · Üretmek için: npm run build
+// Web-to-MCP tarayıcı eklentisi — ayar penceresi (Chrome & Firefox ortak).
+const extApi = typeof browser !== 'undefined' ? browser : chrome;
+
 const AI_DOMAINS = [
   'chatgpt.com', 'claude.ai', 'gemini.google.com', 'google.com',
   'aistudio.google.com', 'deepseek.com', 'kimi.moonshot.cn', 'kimi.com',
   'chatglm.cn', 'z.ai', 'qwen.ai', 'perplexity.ai', 'grok.com', 'mistral.ai', 'poe.com'
 ];
 
+const $ = (id) => document.getElementById(id);
+
+function setStatus(text) {
+  $('statusText').textContent = text;
+}
+
 function toggleTabSelectors(mode) {
-  const box = document.getElementById('tabSelectors');
-  if (mode === '1') box.classList.add('hidden');
-  else box.classList.remove('hidden');
+  $('tabSelectors').classList.toggle('hidden', mode === '1');
+}
+
+function fillSelect(select, options, placeholder) {
+  select.replaceChildren();
+  if (options.length === 0) {
+    select.add(new Option(placeholder, ''));
+    return;
+  }
+  for (const [label, value] of options) select.add(new Option(label, value));
 }
 
 async function populateOpenAiTabs(savedArchitectId, savedCoderId) {
-  const allTabs = await chrome.tabs.query({});
-  const aiTabs = allTabs.filter(t => t.url && AI_DOMAINS.some(d => t.url.includes(d)));
+  const aiTabs = (await extApi.tabs.query({})).filter(t => t.url && AI_DOMAINS.some(d => t.url.includes(d)));
+  const options = aiTabs.map((tab, idx) => [`${idx + 1}. ${(tab.title || tab.url).substring(0, 36)}`, String(tab.id)]);
+  fillSelect($('architectTabSelect'), options, 'Açık AI sekmesi bulunamadı');
+  fillSelect($('coderTabSelect'), options, 'Açık AI sekmesi bulunamadı');
 
-  const archSelect = document.getElementById('architectTabSelect');
-  const coderSelect = document.getElementById('coderTabSelect');
-  archSelect.innerHTML = '';
-  coderSelect.innerHTML = '';
+  if (savedArchitectId) $('architectTabSelect').value = savedArchitectId;
+  if (savedCoderId) $('coderTabSelect').value = savedCoderId;
+  else if (aiTabs.length > 1) $('coderTabSelect').selectedIndex = 1;
+}
 
-  if (aiTabs.length === 0) {
-    const opt = '<option value="">Açık AI sekmesi bulunamadı</option>';
-    archSelect.innerHTML = opt;
-    coderSelect.innerHTML = opt;
+// Seçenek değeri workspace adıdır (port VS Code yeniden açılınca değişebilir).
+function addWorkspaceOption(name, port, select = true) {
+  const sel = $('workspaceSelect');
+  if (![...sel.options].some(o => o.value === name)) sel.add(new Option(port ? `${name} (port ${port})` : name, name));
+  if (select) sel.value = name;
+}
+
+async function scanWorkspaces() {
+  setStatus('Durum: VS Code pencereleri taranıyor...');
+  // Taramada kullanılacak token kaydedilmemiş olabilir.
+  const token = $('token').value.trim();
+  if (token) await extApi.storage.local.set({ token });
+  const res = await extApi.runtime.sendMessage({ type: 'SCAN_WORKSPACES' });
+  if (!res?.ok) {
+    setStatus(`Hata: ${res?.error || 'Tarama başarısız'}`);
     return;
   }
+  const sel = $('workspaceSelect');
+  const current = sel.value;
+  sel.replaceChildren(new Option('Otomatik (ilk bulunan)', ''));
+  const valid = res.workspaces.filter(w => w.workspace);
+  for (const w of valid) addWorkspaceOption(w.workspace, w.port, false);
+  if ([...sel.options].some(o => o.value === current)) sel.value = current;
 
-  aiTabs.forEach((tab, idx) => {
-    const shortTitle = (tab.title || tab.url).substring(0, 36);
-    archSelect.add(new Option(`${idx + 1}. ${shortTitle}`, tab.id));
-    coderSelect.add(new Option(`${idx + 1}. ${shortTitle}`, tab.id));
-  });
-
-  if (savedArchitectId) archSelect.value = savedArchitectId;
-  if (savedCoderId) coderSelect.value = savedCoderId;
-  else if (aiTabs.length > 1) coderSelect.selectedIndex = 1;
+  const invalid = res.workspaces.length - valid.length;
+  if (valid.length === 0) setStatus(invalid ? 'Durum: VS Code bulundu ama token eşleşmedi.' : 'Durum: Açık VS Code penceresi bulunamadı.');
+  else setStatus(`Durum: ${valid.length} VS Code penceresi bulundu${invalid ? `, ${invalid} tanesinde token eşleşmedi` : ''}.`);
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-  const data = await chrome.storage.local.get([
-    'wsUrl', 'token', 'autoSend', 'connectionStatus', 'mode', 'architectTabId', 'coderTabId', 'activeWsPort'
+  const data = await extApi.storage.local.get([
+    'token', 'autoSend', 'connectionStatus', 'mode', 'architectTabId', 'coderTabId',
+    'pinnedWorkspace'
   ]);
 
-  const activePort = data.activeWsPort || 8766;
-  if (data.wsUrl && !data.wsUrl.includes('127.0.0.1:8765') && !data.wsUrl.includes('127.0.0.1:8766')) {
-    document.getElementById('wsUrl').value = data.wsUrl;
-  } else {
-    document.getElementById('wsUrl').value = `ws://127.0.0.1:${activePort}`;
-  }
-  if (data.token) document.getElementById('token').value = data.token;
-  if (data.autoSend !== undefined) document.getElementById('autoSend').checked = data.autoSend;
-  if (data.connectionStatus) document.getElementById('statusText').textContent = `Durum: ${data.connectionStatus}`;
+  if (data.token) $('token').value = data.token;
+  if (data.autoSend !== undefined) $('autoSend').checked = data.autoSend;
+  if (data.connectionStatus) setStatus(`Durum: ${data.connectionStatus}`);
+  if (data.pinnedWorkspace) addWorkspaceOption(data.pinnedWorkspace, null);
 
   const currentMode = data.mode || '1';
-  document.getElementById('modeSelect').value = currentMode;
+  $('modeSelect').value = currentMode;
   toggleTabSelectors(currentMode);
 
   await populateOpenAiTabs(data.architectTabId, data.coderTabId);
 
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes.connectionStatus) {
-      const statusEl = document.getElementById('statusText');
-      if (statusEl) {
-        statusEl.textContent = `Durum: ${changes.connectionStatus.newValue}`;
-      }
-    }
+  extApi.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.connectionStatus) setStatus(`Durum: ${changes.connectionStatus.newValue}`);
   });
 });
 
-document.getElementById('modeSelect').addEventListener('change', (e) => {
-  toggleTabSelectors(e.target.value);
+$('modeSelect').addEventListener('change', (e) => toggleTabSelectors(e.target.value));
+
+$('pairBtn').addEventListener('click', async () => {
+  setStatus('Durum: VS Code\'da eşleştirme onayı bekleniyor... (VS Code penceresine bakın)');
+  const res = await extApi.runtime.sendMessage({ type: 'PAIR' });
+  if (res?.ok) {
+    const { token } = await extApi.storage.local.get(['token']);
+    $('token').value = token || '';
+    setStatus(`Durum: Eşleştirildi${res.workspace ? ' (' + res.workspace + ')' : ''} ✔`);
+  } else {
+    setStatus(`Hata: ${res?.error || 'Eşleştirme başarısız'}`);
+  }
 });
 
-document.getElementById('saveBtn').addEventListener('click', async () => {
-  const wsUrl = document.getElementById('wsUrl').value.trim() || 'ws://127.0.0.1:8766';
-  const token = document.getElementById('token').value.trim() || 'mcp-gizli-anahtar-2026';
-  const autoSend = document.getElementById('autoSend').checked;
-  const mode = document.getElementById('modeSelect').value;
-  const architectTabId = document.getElementById('architectTabSelect').value;
-  const coderTabId = document.getElementById('coderTabSelect').value;
-
-  await chrome.storage.local.set({ wsUrl, token, autoSend, mode, architectTabId, coderTabId });
-  chrome.runtime.sendMessage({ type: 'RECONNECT' });
-  document.getElementById('statusText').textContent = 'Durum: Bağlanılıyor...';
+$('scanBtn').addEventListener('click', () => {
+  scanWorkspaces().catch(err => setStatus(`Hata: ${err.message}`));
 });
 
-document.getElementById('startBtn').addEventListener('click', async () => {
-  const mode = document.getElementById('modeSelect').value;
-  const architectTabId = document.getElementById('architectTabSelect').value;
-  const coderTabId = document.getElementById('coderTabSelect').value;
-
-  await chrome.storage.local.set({ mode, architectTabId, coderTabId });
-
-  const statusEl = document.getElementById('statusText');
-  statusEl.textContent = 'Durum: Akış başlatılıyor...';
-
-  chrome.runtime.sendMessage({ type: 'START_PIPELINE' }, (res) => {
-    if (res?.ok) {
-      statusEl.textContent = 'Durum: Aktif! Ajanlar çalışıyor.';
-      setTimeout(() => window.close(), 800);
-    } else {
-      statusEl.textContent = `Hata: ${res?.error || 'Sekme seçimi geçersiz'}`;
-    }
+$('saveBtn').addEventListener('click', async () => {
+  const token = $('token').value.trim();
+  await extApi.storage.local.set({
+    token,
+    autoSend: $('autoSend').checked,
+    mode: $('modeSelect').value,
+    architectTabId: $('architectTabSelect').value,
+    coderTabId: $('coderTabSelect').value,
+    // Boş = ilk bulunan VS Code penceresi; dolu = yalnızca bu projeye bağlan.
+    pinnedWorkspace: $('workspaceSelect').value
   });
+  if (!token) {
+    setStatus('Durum: Token gerekli (VS Code → 🔑)');
+    return;
+  }
+  setStatus('Durum: Bağlanılıyor...');
+  await extApi.runtime.sendMessage({ type: 'RECONNECT' });
+});
+
+$('startBtn').addEventListener('click', async () => {
+  await extApi.storage.local.set({
+    mode: $('modeSelect').value,
+    architectTabId: $('architectTabSelect').value,
+    coderTabId: $('coderTabSelect').value
+  });
+  setStatus('Durum: Akış başlatılıyor...');
+  const res = await extApi.runtime.sendMessage({ type: 'START_PIPELINE' });
+  if (res?.ok) {
+    setStatus('Durum: Aktif! Ajanlar çalışıyor.');
+    setTimeout(() => window.close(), 800);
+  } else {
+    setStatus(`Hata: ${res?.error || 'Sekme seçimi geçersiz'}`);
+  }
 });

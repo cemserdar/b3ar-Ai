@@ -1,30 +1,56 @@
+// OTOMATİK ÜRETİLDİ — düzenlemeyin. Kaynak: src/browser/ · Üretmek için: npm run build
 const extApi = typeof browser !== 'undefined' ? browser : chrome;
 
-const processedCallIds = new Set();
-const processedSignals = new Set();
-const processedFailovers = new Set();
-const sentReplies = new Set();
-let debounceTimer = null;
+// Uzun oturumlarda belleğin sınırsız büyümemesi için en eski kayıtları atan Set.
+class BoundedSet extends Set {
+  constructor(max = 500) { super(); this.max = max; }
+  add(value) {
+    super.add(value);
+    if (this.size > this.max) this.delete(this.values().next().value);
+    return this;
+  }
+}
 
+// Çalıştırılmış çağrılar id+araç+parametre imzasıyla tutulur: AI sonraki yanıtta yine "req_01"
+// kullansa bile farklı parametreli çağrı atlanmaz; aynı çağrı ise iki kez çalışmaz.
+const processedCallSignatures = new BoundedSet(1000);
+const processedSignals = new BoundedSet();
+const processedFailovers = new BoundedSet();
+const sentReplies = new BoundedSet();
+// Bu sekmeye bizim yazdığımız metinlerdeki (kurulum kılavuzu örnekleri, araç sonuçları,
+// okunan dosya içerikleri) <mcp_call> blokları asla çalıştırılmaz.
+const injectedCallSignatures = new BoundedSet(1000);
+let debounceTimer = null;
+let isScanning = false;
+// Yanıtın bittiğinden emin olmak için metin iki ardışık taramada aynı kalmalı.
+let lastObservedText = null;
+
+const USER_MESSAGE_SELECTOR = [
+  '[data-message-author-role="user"]',
+  '[data-testid*="user" i]',
+  '[class*="user-message" i]',
+  '[class*="user_message" i]',
+  '[class*="human" i]',
+  '.user-query'
+].join(', ');
+
+// Yalnızca kota/limit anlamı taşıyan özgül ifadeler. "something went wrong", "rate limit" gibi
+// genel ifadeler AI'ın normal yanıtlarında da geçtiği için yanlış failover tetikliyordu.
 const LIMIT_ERROR_PATTERNS = [
-  /you'?ve reached (your|the) (usage |message |chat )?limit/i,
-  /usage limit reached/i,
+  /you'?ve (reached|hit) (your|the) (daily |usage |message |chat )?limit/i,
+  /usage limit (reached|exceeded)/i,
   /message limit reached/i,
-  /quota exceeded/i,
-  /rate limit/i,
+  /quota (exceeded|reached)/i,
+  /rate limit (reached|exceeded)/i,
   /too many requests/i,
-  /please try again later/i,
-  /something went wrong/i,
-  /network error/i,
-  /an error occurred/i,
   /server is busy/i,
   /limitinize ulaştınız/i,
   /mesaj sınırına ulaştınız/i,
-  /kullanım limiti/i,
+  /kullanım limitine ulaştınız/i,
   /çok fazla istek/i,
-  /bir hata oluştu/i,
-  /sunucu yoğun/i
+  /sunucu (şu anda )?(çok )?yoğun/i
 ];
+const LIMIT_RESPONSE_MAX_LEN = 300;
 
 function isElementVisible(el) {
   if (!el) return false;
@@ -117,7 +143,7 @@ function detectLimitOrError(responseText) {
   ).length > 0;
   if (!hasUserMessages) return null;
 
-  if (responseText && responseText.length < 600 && !responseText.includes('<mcp_call')) {
+  if (responseText && responseText.length < LIMIT_RESPONSE_MAX_LEN && !responseText.includes('<mcp_call')) {
     for (const pattern of LIMIT_ERROR_PATTERNS) {
       if (pattern.test(responseText)) {
         return responseText.trim().substring(0, 120);
@@ -327,7 +353,11 @@ const UNIVERSAL_FALLBACK = {
     const candidates = Array.from(document.querySelectorAll('article, .markdown-body, .prose, [class*="markdown" i], [class*="message" i]'))
       .filter(el => {
         const text = el.innerText || '';
-        return text.trim().length > 0 && !el.querySelector('textarea, [contenteditable="true"]');
+        return text.trim().length > 0 &&
+          !el.querySelector('textarea, [contenteditable="true"]') &&
+          // Kullanıcı mesajlarını (ve onları kapsayan konteynerleri) asla AI yanıtı sayma
+          !el.closest(USER_MESSAGE_SELECTOR) &&
+          !el.querySelector(USER_MESSAGE_SELECTOR);
       });
     return candidates.length ? extractFormattedMarkdown(candidates[candidates.length - 1]) : '';
   },
@@ -347,23 +377,59 @@ function getActiveAdapter() {
   return Object.values(SITE_ADAPTERS).find(adapter => adapter.match()) || UNIVERSAL_FALLBACK;
 }
 
+function callSignature(call) {
+  const argPairs = Object.keys(call.arguments).sort().map(k => [k, String(call.arguments[k]).trim()]);
+  return `${call.id}|${call.tool}|${JSON.stringify(argPairs)}`;
+}
+
+function rememberInjectedCalls(text) {
+  for (const call of extractMcpCalls(text || '')) {
+    injectedCallSignatures.add(callSignature(call));
+  }
+}
+
 function parseMcpCalls(text) {
+  return extractMcpCalls(text).filter(call =>
+    !call.id.startsWith('ornek_') && // Kurulum kılavuzundaki örnek çağrılar
+    !processedCallSignatures.has(callSignature(call)) &&
+    !injectedCallSignatures.has(callSignature(call))
+  );
+}
+
+function decodeXmlEntities(value) {
+  return value
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&');
+}
+
+function readXmlAttribute(attrText, name) {
+  const m = attrText.match(new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`));
+  return m ? (m[1] ?? m[2]) : null;
+}
+
+function extractMcpCalls(text) {
   const calls = [];
-  const callRegex = /<mcp_call\s+id="([^"]+)"\s+tool="([^"]+)">([\s\S]*?)<\/mcp_call>/g;
+  // Öznitelik sırası ve tırnak tipi serbest: <mcp_call tool="x" id="y"> da kabul edilir.
+  const callRegex = /<mcp_call\b([^>]*)>([\s\S]*?)<\/mcp_call>/g;
   let match;
 
   while ((match = callRegex.exec(text)) !== null) {
-    const [, id, tool, innerXml] = match;
-    if (processedCallIds.has(id)) continue;
+    const [, attrText, innerXml] = match;
+    const tool = readXmlAttribute(attrText, 'tool');
+    if (!tool) continue;
+    const id = readXmlAttribute(attrText, 'id') || `auto_${tool}`;
 
     const args = {};
-    const paramRegex = /<param\s+name="([^"]+)">(?:<!\[CDATA\[([\s\S]*?)\]\]>|([\s\S]*?))<\/param>/g;
+    // CDATA öncesi/sonrası boşluklara tolerans: aksi halde "<![CDATA[" metni içeriğe karışırdı.
+    const paramRegex = /<param\s+name\s*=\s*["']([^"']+)["']\s*>\s*(?:<!\[CDATA\[([\s\S]*?)\]\]>\s*|([\s\S]*?))<\/param>/g;
     let pMatch;
 
     while ((pMatch = paramRegex.exec(innerXml)) !== null) {
       const paramName = pMatch[1];
-      const paramValue = pMatch[2] !== undefined ? pMatch[2] : pMatch[3];
-      args[paramName] = paramValue;
+      args[paramName] = pMatch[2] !== undefined ? pMatch[2] : decodeXmlEntities(pMatch[3].trim());
     }
 
     calls.push({ id, tool, arguments: args });
@@ -387,16 +453,34 @@ function setNativeValue(element, value) {
   }
 }
 
+function sendRuntimeMessage(message) {
+  return new Promise((resolve) => {
+    extApi.runtime.sendMessage(message, (response) => {
+      if (extApi.runtime.lastError) {
+        resolve({ ok: false, error: extApi.runtime.lastError.message });
+        return;
+      }
+      resolve(response);
+    });
+  });
+}
+
+// Metni giriş kutusuna yazar ve (izin verilirse) gönderir. Kota dolmuşsa metin kutuda bekletilir.
 async function injectAndSendResult(adapter, resultText) {
+  rememberInjectedCalls(resultText);
   const { autoSend = true } = await extApi.storage.local.get(['autoSend']);
   const inputEl = adapter.getInput() || UNIVERSAL_FALLBACK.getInput();
 
-  if (!inputEl) return;
+  if (!inputEl) return { ok: false, error: 'AI sayfasında mesaj giriş kutusu bulunamadı (giriş yapılmamış olabilir).' };
 
   setNativeValue(inputEl, resultText);
-  if (!autoSend) return;
+  if (!autoSend) return { ok: true, sent: false };
 
-  const humanDelay = 1200 + Math.floor(Math.random() * 1200);
+  const slot = await sendRuntimeMessage({ type: 'ACQUIRE_SEND_SLOT' });
+  if (!slot?.ok) return { ok: true, sent: false, reason: slot?.reason || slot?.error };
+
+  // Sitenin giriş kutusundaki değişikliği işleyip "Gönder" butonunu etkinleştirmesi için kısa bekleme.
+  const sendDelay = 1000 + (slot.waitMs || 0);
 
   setTimeout(() => {
     const sendBtn = adapter.getSendButton() || UNIVERSAL_FALLBACK.getSendButton();
@@ -416,17 +500,103 @@ async function injectAndSendResult(adapter, resultText) {
         })
       );
     }
-  }, humanDelay);
+  }, sendDelay);
+  return { ok: true, sent: true };
 }
 
+// ---------------------------------------------------------------------------
+// Doğrulama / giriş ekranı algılama (arka plan modunda tarayıcıyı görünür açtırmak için)
+// ---------------------------------------------------------------------------
+const CHALLENGE_SELECTORS = [
+  'iframe[src*="challenges.cloudflare.com"]',
+  'iframe[src*="hcaptcha.com"]',
+  'iframe[src*="recaptcha"]',
+  '#challenge-form',
+  '#cf-challenge-running',
+  '[id^="cf-chl"]',
+  '.cf-turnstile'
+];
+const CHALLENGE_TITLE_REGEX = /just a moment|attention required|verify you are human|bir dakika lütfen|insan olduğunuzu doğrulayın/i;
+const LOGIN_TEXT_REGEX = /^(log in|login|sign in|sign up|giriş yap|oturum aç|kaydol)$/i;
+let lastAttentionKey = '';
+let lastAttentionAt = 0;
+
+function detectAttentionReason(adapter) {
+  if (CHALLENGE_TITLE_REGEX.test(document.title || '')) return 'Bot doğrulaması (CAPTCHA) gerekiyor';
+  for (const sel of CHALLENGE_SELECTORS) {
+    const el = document.querySelector(sel);
+    if (el && isElementVisible(el)) return 'Bot doğrulaması (CAPTCHA) gerekiyor';
+  }
+  // Giriş kutusu yoksa ve sayfada belirgin bir "Giriş yap" butonu varsa oturum kapanmıştır.
+  if (adapter && !adapter.getInput() && !UNIVERSAL_FALLBACK.getInput()) {
+    const buttons = document.querySelectorAll('button, a[role="button"], a[href*="login"], a[href*="signin"]');
+    for (const btn of buttons) {
+      if (LOGIN_TEXT_REGEX.test((btn.textContent || '').trim()) && isElementVisible(btn)) return 'AI sitesinde oturum açmanız gerekiyor';
+    }
+  }
+  return null;
+}
+
+function checkForAttention(adapter) {
+  const reason = detectAttentionReason(adapter);
+  if (!reason) return false;
+  const key = `${location.hostname}|${reason}`;
+  if (key !== lastAttentionKey || Date.now() - lastAttentionAt > 120000) {
+    lastAttentionKey = key;
+    lastAttentionAt = Date.now();
+    sendRuntimeMessage({ type: 'ATTENTION_REQUIRED', reason: `${reason} (${location.hostname})` });
+  }
+  return true;
+}
+
+function hashText(text) {
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
+
+function executeMcpCall(call) {
+  return new Promise((resolve) => {
+    extApi.runtime.sendMessage({ type: 'EXECUTE_MCP_CALL', payload: call }, (response) => {
+      const lastError = extApi.runtime.lastError;
+      if (lastError || !response) {
+        resolve({ result: { content: [{ type: 'text', text: `ERROR: Eklenti arka planına ulaşılamadı (${lastError?.message || 'yanıt yok'}).` }], isError: true } });
+        return;
+      }
+      resolve(response);
+    });
+  });
+}
+
+// Taramalar hem MutationObserver hem de zamanlayıcı ile tetiklenir; kilit aynı yanıtın
+// iki taramada eş zamanlı işlenmesini (çift araç çalıştırma / çift yapıştırma) engeller.
 async function scanPageForCalls() {
+  if (isScanning) return;
+  isScanning = true;
+  try {
+    await scanPageForCallsUnlocked();
+  } catch (err) {
+    console.warn('[Web-MCP Content] Tarama hatası:', err);
+  } finally {
+    isScanning = false;
+  }
+}
+
+async function scanPageForCallsUnlocked() {
   const adapter = getActiveAdapter();
   if (!adapter) return;
+  if (checkForAttention(adapter)) return;
   if (adapter.isGenerating()) return;
 
   let responseText = adapter.getLastResponseText();
   if (!responseText && adapter !== UNIVERSAL_FALLBACK) {
     responseText = UNIVERSAL_FALLBACK.getLastResponseText();
+  }
+
+  // "Durdur" butonu kısa süreliğine kaybolabilir; metin değişmeye devam ediyorsa yanıt bitmemiştir.
+  if (responseText !== lastObservedText) {
+    lastObservedText = responseText;
+    return;
   }
 
   const limitReason = detectLimitOrError(responseText);
@@ -442,7 +612,7 @@ async function scanPageForCalls() {
   if (!responseText) return;
 
   const cleanReply = responseText.trim();
-  const replyHash = `${location.hostname}_${cleanReply.slice(0, 50)}_${cleanReply.length}`;
+  const replyHash = `${location.hostname}_${cleanReply.length}_${hashText(cleanReply)}`;
   if (cleanReply.length > 0 && !sentReplies.has(replyHash)) {
     sentReplies.add(replyHash);
     console.log('[Web-MCP Content] AI yanıtı yakalandı ve gönderiliyor:', cleanReply.substring(0, 60));
@@ -461,10 +631,8 @@ async function scanPageForCalls() {
   if (calls.length > 0) {
     const resultsOutput = [];
     for (const call of calls) {
-      processedCallIds.add(call.id);
-      const response = await new Promise((resolve) => {
-        extApi.runtime.sendMessage({ type: 'EXECUTE_MCP_CALL', payload: call }, resolve);
-      });
+      processedCallSignatures.add(callSignature(call));
+      const response = await executeMcpCall(call);
       const textResult = response?.result?.content?.[0]?.text || 'Bilinmeyen sunucu yanıtı';
       const status = response?.result?.isError ? 'ERROR' : 'OK';
       resultsOutput.push(`[MCP_RESULT id="${call.id}" status="${status}"]\n${textResult}\n[/MCP_RESULT]`);
@@ -502,7 +670,10 @@ setInterval(scanPageForCalls, 1000);
 extApi.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'INJECT_HANDOFF' && message.prompt) {
     const adapter = getActiveAdapter() || UNIVERSAL_FALLBACK;
-    injectAndSendResult(adapter, message.prompt).then(() => sendResponse({ ok: true }));
+    injectAndSendResult(adapter, message.prompt).then(
+      (result) => sendResponse(result || { ok: true }),
+      (err) => sendResponse({ ok: false, error: err.message })
+    );
     return true;
   }
 });

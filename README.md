@@ -1,55 +1,96 @@
 # ⚡ Web-to-MCP Multi-Agent Bridge
 
-Tarayıcıda açık olan ücretsiz veya mevcut AI web arayüzlerini (**Claude, ChatGPT, Gemini, Google AI Mode, AI Studio, DeepSeek, Kimi, GLM, Qwen, Grok, Mistral, Perplexity** vb.) ek bir API anahtarına ihtiyaç duymadan **VS Code** içinde yerel dosya sistemine, terminale ve Diff (fark) araçlarına erişebilen otonom bir **Çoklu Ajan (Multi-Agent) Kodlama Sistemine** dönüştüren köprü mimarisidir.
+Tarayıcıda açık AI web arayüzlerini (**ChatGPT, Claude, Gemini, Google AI Mode, AI Studio, DeepSeek, Kimi, GLM, Qwen, Grok, Mistral, Perplexity** vb.) API anahtarı gerektirmeden **VS Code** içinde dosya sistemine, terminale ve diff araçlarına erişebilen bir **çoklu ajan kodlama sistemine** dönüştürür.
 
 ---
 
-## 🏗️ Sistem Mimarisi
+## 🚀 Kurulum (tek paket)
 
-Sistem, yerel WebSocket (`ws://127.0.0.1:8765`) üzerinden **JSON-RPC 2.0** ve **XML Tool-Calling** protokolleriyle haberleşen 3 ana bileşenden oluşur:
+`web-mcp-suite-<sürüm>.zip` arşivini açın:
+
+| Sistem | Komut |
+|---|---|
+| Linux / macOS | `./install.sh` |
+| Windows | `install.cmd` (çift tık) |
+
+1. Betik VS Code eklentisini kurar (tarayıcı eklentileri paketin **içindedir**) ve VS Code'u açar.
+2. VS Code'da **"Web-MCP kuruldu!" → Kurulumu Başlat**: sihirbaz yüklü tarayıcıları bulur ve eklentiyi kurdurur.
+3. Tarayıcı eklentisi kurulunca VS Code'da **eşleştirme onayı** çıkar → **İzin Ver**. Token otomatik aktarılır.
+
+Ayrıntılar: [web-mcp-suite/scripts/installers/KURULUM.md](web-mcp-suite/scripts/installers/KURULUM.md)
+
+> **Tarayıcı kısıtları:** Chrome mağaza dışı eklentiyi sessizce kurmaya izin vermez — sihirbaz eklentiler sayfasını açar ve klasör yolunu panoya kopyalar ("Paketlenmemiş öğe yükle", tek seferlik). Firefox yalnızca **Mozilla imzalı** `.xpi`'yi kalıcı kurar; imza için `npm run sign:firefox` (ücretsiz AMO hesabı).
+
+---
+
+## 🏗️ Mimari
 
 ```text
-+-----------------------------------------------------------------------+
-|                     VS CODE EKLENTİSİ (vscode-web-mcp)                |
-|  - Sol Panel Sohbet Arayüzü (Webview) & @dosya Otomatik Tamamlama     |
-|  - Gömülü WebSocket Sunucusu (Port 8765)                              |
-|  - Yerel MCP Araçları (read_file, write_file, apply_diff, run_command)|
-|  - Native Kırmızı/Yeşil Diff Önizleme & Kabul Et / Reddet Kontrolü    |
-+-----------------------------------------------------------------------+
-                                 |  ▲
-                                 |  | WebSocket (ws://127.0.0.1:8765)
-                                 ▼  |
-+-----------------------------------------------------------------------+
-|             TARAYICI EKLENTİLERİ (extension-chrome / firefox)         |
-|  - Prompt Enjeksiyonu & İnsansı Gecikme ile Otomatik Gönderim         |
-|  - DOM Gözlemcisi (MutationObserver) ile AI Yanıtlarını Okuma         |
-|  - Çoklu Sekme Orkestrasyonu (Mimar ➔ Kodlayıcı ➔ Denetçi)            |
-|  - Auto-Failover: Kota/Hata durumunda sıradaki AI sekmesine geçiş     |
-+-----------------------------------------------------------------------+
-Klasör YapısıPlaintextweb-mcp-suite/
-├── README.md                # Proje dokümantasyonu ve kullanım kılavuzu
-├── vscode-web-mcp/          # VS Code Eklentisi (Gömülü Sunucu + UI)
-│   ├── package.json
-│   ├── extension.js
-│   └── media/
-│       └── icon.svg
-├── extension-chrome/        # Chrome / Brave / Edge Eklentisi (Manifest V3)
-│   ├── manifest.json
-│   ├── background.js
-│   ├── content.js
-│   ├── popup.html
-│   └── popup.js
-└── extension-firefox/       # Firefox / Zen / LibreWolf Eklentisi (Manifest V3)
-    ├── manifest.json
-    ├── background.js
-    ├── content.js
-    ├── popup.html
-    └── popup.js
-🚀 Kurulum Adımları1. VS Code Eklentisinin KurulumuTerminali açın ve vscode-web-mcp klasörüne girerek tek bağımlılık olan ws paketini yükleyin:Bashcd web-mcp-suite/vscode-web-mcp
-npm install
-Eklentiyi VS Code'un eklentiler dizinine sembolik bağ (symlink) ile bağlayın:Bashln -s "$(pwd)" ~/.vscode/extensions/vscode-web-mcp
-VS Code'u yeniden başlatın. Sol dikey menü çubuğunda (Activity Bar) ⚡ Web-MCP Agent ikonu görünecektir. VS Code açıldığı anda 8765 portu arka planda otomatik olarak dinlemeye başlar.2. Tarayıcı Eklentisinin KurulumuChrome / Brave / Edge İçinAdres çubuğuna chrome://extensions yazın.Sağ üstten Geliştirici modu (Developer mode) anahtarını açın.Paketlenmemiş öğe yükle (Load unpacked) butonuna tıklayın ve extension-chrome/ klasörünü seçin.Firefox / Zen Browser İçinAdres çubuğuna about:debugging#/runtime/this-firefox yazın.Geçici Eklenti Yükle... (Load Temporary Add-on...) butonuna tıklayın.extension-firefox/manifest.json dosyasını seçin.🎮 Kullanım KılavuzuAdım 1: Bağlantıyı EşleştirmeTarayıcınızda kullanmak istediğiniz AI sitelerini açın (örneğin 1. sekmede Claude veya Gemini, 2. sekmede DeepSeek veya Qwen).Not: Eklentiyi yüklemeden önce açık olan AI sekmeleri varsa bir kez F5 ile sayfayı yenileyin.Tarayıcı araç çubuğundan eklenti ikonuna tıklayın. Varsayılan adres (ws://127.0.0.1:8765) ve token (mcp-gizli-anahtar-2026) hazır gelir; Ayarları Kaydet ve Bağlan butonuna basın.VS Code sol panelindeki rozetin yeşile dönüp Tarayıcı Bağlı yazdığını doğrulayın.Adım 2: Çalışma Modunu SeçmeHem VS Code panelinden hem de tarayıcı eklentisi popup'ından 3 farklı iş akışı seçebilirsiniz:Modİş AkışıAçıklamaMod 1: Tekli OtonomTek AI SekmesiAktif sekmedeki AI hem planlar hem kod yazar. Günlük hızlı işler için idealdir.Mod 2: Mimar ➔ KodlayıcıSekme A $\rightarrow$ Sekme BMimar sekmesi projeyi inceler, uygulama kodu yazmadan .mcp/PLAN.md dosyasını hazırlar ve <handoff_to_coder/> ürettiği an sistem otomatik olarak Kodlayıcı sekmesine geçip kodu yazdırır.Mod 3: Planla ➔ Kodla ➔ DenetleSekme A $\rightarrow$ Sekme B $\rightarrow$ Sekme AKodlayıcı işi bitirip <handoff_to_reviewer/> dediğinde sistem tekrar Mimar sekmesine döner; Mimar değişiklikleri denetler, hata varsa tekrar Kodlayıcıya geri gönderir.(Mod 2 veya Mod 3 kullanırken tarayıcı eklentisi popup'ından Mimar Sekmesi ve Kodlayıcı Sekmesi seçimini yapıp kaydetmeyi unutmayın.)Adım 3: VS Code Üzerinden Görev GöndermeNormal Sohbet: Alt kutuya doğrudan mesajınızı yazıp Enter tuşuna bastığınızda (örneğin selam), tarayıcıya sadece yazdığınız metin gider.Ajan Modunu Aktifleştirme: AI'ın proje dosyalarınızı okuyup değiştirmesini istediğinizde, yeni bir sohbet sekmesinde bir kez üstteki 🧠 Ajan Kurallarını AI'a Yükle butonuna basın. Bu işlem MCP araç kurallarını ve proje hafızasını AI'a tanıtır.Dosya Bağlamı Ekleme (@dosya): Mesaj yazarken @ tuşuna bastığınızda proje dosyaları listelenir. Seçtiğiniz dosyalar rozet (chip) olarak eklenir ve tam içerikleri AI'a iletilir. İsterseniz "Açık olan dosyayı da gönder" kutucuğunu işaretleyebilirsiniz.Adım 4: Diff İnceleme ve OnaylamaAI herhangi bir dosyayı oluşturduğunda veya güncellediğinde VS Code orta ekranda otomatik olarak Kırmızı/Yeşil yan yana Diff (Eski ↔ Yeni) penceresi açar.Sol panelde beliren dosya kartından:✔ Kabul Et: Değişikliği onaylar, geçici diff sekmesini kapatır ve dosyayı temiz haliyle açar.✖ Reddet (Geri Al): Dosyayı değişiklikten önceki haline döndürür (yeni oluşturulan bir dosyaysa siler).🛡️ Akıllı Özellikler ve GüvenlikOtomatik Yedekleme (Auto-Failover): Aktif AI sekmesinde mesaj limiti dolduğunda (usage limit, quota exceeded, too many requests vb.) veya ağ hatası oluştuğunda eklenti duraksamaz; tarayıcıda açık olan bir sonraki AI sekmesine otomatik atlar, mevcut rolü ve .mcp/STATE.md hafızasını yeni sekmeye devrederek kaldığı yerden devam eder.Canlı Proje Hafızası (.mcp/STATE.md & .mcp/PLAN.md): Tüm mimari kararlar ve tamamlanan adımlar proje kökündeki .mcp/ klasöründe tutulur; sekme veya model değişse bile bağlam kaybolmaz.Dizin Güvenliği: MCP sunucusu yalnızca VS Code'da o an açık olan çalışma alanı (workspaceFolder) içindeki dosyalara erişebilir; üst dizinlere (../) erişim engellenmiştir.
-<ElicitationsGroup message="Dokümantasyon veya proje dosyaları üzerinde başka bir düzenleme yapalım mı?">
-  <Elicitation label="Git ile paylaşıma uygun .gitignore dosyası oluştur" query="Projedeki node_modules, .mcp/.tmp_diff ve geçici sistem dosyalarını hariç tutan temiz bir .gitignore dosyası hazırla."/>
-  <Elicitation label="Yerel AI arayüzleri (Ollama / OpenWebUI) için domain ekleme bölümünü dokümana ekle" query="README.md dosyasına yerel Ollama WebUI veya özel AI alan adlarını eklentiye nasıl ekleyeceğimizi anlatan bir bölüm ekle."/>
-</ElicitationsGroup>
+┌──────────────────────── VS Code Eklentisi (vscode-web-mcp) ────────────────────────┐
+│ webviewProvider  Sohbet paneli, @dosya, Kabul Et / Reddet                           │
+│ bridgeServer     127.0.0.1 WebSocket · JSON-RPC 2.0 · Origin + token · eşleştirme   │
+│ tools            read_file / write_file / apply_diff / list_directory / run_command │
+│ diffEngine       Güvenli search/replace (CRLF, belirsizlik kontrolü)                 │
+│ browserHost      Arka plan modu: ayrı profil, Xvfb ile gizli tarayıcı                │
+│ setupWizard      Tarayıcı tespiti ve eklenti kurulumu                                │
+└───────────────────────────────────────▲─────────────────────────────────────────────┘
+                                        │ ws://127.0.0.1:8766-8770, 8765
+┌───────────────────── Tarayıcı Eklentisi (src/browser → Chrome & Firefox) ──────────┐
+│ background  Bağlantı, eşleştirme, istek kotası, sekme rolleri, Auto-Failover        │
+│ content     Site adaptörleri, <mcp_call> ayrıştırma, doğrulama/giriş algılama       │
+│ popup       Mod seçimi, VS Code projesi seçimi, eşleştirme                          │
+└──────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Klasör yapısı
+
+```text
+web-mcp-suite/
+├── src/browser/            # Tarayıcı eklentisi TEK KAYNAK (buradan düzenleyin)
+├── extension-chrome/       # Üretilir: npm run build
+├── extension-firefox/      # Üretilir: npm run build
+├── vscode-web-mcp/
+│   ├── extension.js        # Bağlantı noktası (activate/deactivate)
+│   ├── lib/                # Modüller
+│   ├── media/webview.html
+│   └── test/               # node:test (bağımlılıksız)
+└── scripts/                # build, package, sign-firefox, zip, installers/
+```
+
+---
+
+## 🛡️ Güvenlik
+
+- **Token:** Kurulum başına rastgele üretilir, VS Code SecretStorage'da saklanır; eşleştirme yalnızca VS Code'daki onayla verilir.
+- **Origin:** Sunucu yalnızca `chrome-extension://` / `moz-extension://` bağlantılarını kabul eder (web sayfaları bağlanamaz).
+- **Dosya erişimi:** Workspace dışı, sembolik bağlantı kaçışı ve `.git/` engellenir.
+- **Terminal:** AI'ın her komutu çalışmadan önce VS Code'da onayınıza sunulur.
+- **Webview:** Nonce'lu CSP; AI içeriği yalnızca düz metin olarak basılır.
+- **Hesap güvenliği:** AI sekmelerine otomatik gönderim kotası (`webMcp.limits.*`, varsayılan 60/saat, 400/gün, 3 sn aralık).
+
+> AI sitelerinin kullanım koşulları otomatik erişimi kısıtlayabilir. Bu araç bot korumasını atlatmaya çalışmaz; doğrulama ekranı çıkarsa tarayıcıyı size gösterir.
+
+---
+
+## 🕶️ Arka Plan Modu
+
+Ayrı ve kalıcı bir Chromium profili **normal bir tarayıcı süreci** olarak açılır (otomasyon protokolü yok).
+Linux'ta Xvfb sanal ekranında tamamen görünmez çalışır (`chromium` + `xorg-server-xvfb`).
+
+Durum çubuğu → **Web-MCP** menüsü: *Görünür aç* (bir kez giriş yapın) → *Gizli başlat*.
+Ayarlar: `webMcp.browser.*` (tarayıcı yolu, açılış adresleri, VS Code ile otomatik başlatma, doğrulamada otomatik gösterme).
+
+---
+
+## 🧑‍💻 Geliştirme
+
+```bash
+cd web-mcp-suite
+npm ci --prefix vscode-web-mcp
+npm run build        # src/browser → extension-chrome / extension-firefox
+npm run check        # build güncel mi + tüm testler
+npm run lint:firefox # Mozilla web-ext lint
+npm run package      # dist/web-mcp-<sürüm>.vsix + dist/web-mcp-suite-<sürüm>.zip
+```
+
+Tarayıcı eklentisi dosyalarını **yalnızca `src/browser/` altında** düzenleyin; `extension-*` klasörleri üretilir (CI güncelliğini denetler).

@@ -1,9 +1,10 @@
 <!DOCTYPE html>
+<!-- OTOMATİK ÜRETİLDİ — düzenlemeyin. Kaynak: src/browser/ · Üretmek için: npm run build -->
 <html lang="tr">
 <head>
   <meta charset="UTF-8">
   <style>
-    body { width: 310px; font-family: system-ui, sans-serif; padding: 12px; background: #1e1e2e; color: #cdd6f4; }
+    body { width: 320px; font-family: system-ui, sans-serif; padding: 12px; background: #1e1e2e; color: #cdd6f4; }
     label { display: block; font-size: 11px; margin-top: 8px; color: #a6adc8; font-weight: 600; }
     select, input[type="text"], input[type="password"] {
       width: 100%; box-sizing: border-box; padding: 6px; margin-top: 4px;
@@ -13,12 +14,14 @@
       width: 100%; margin-top: 10px; padding: 8px; background: #89b4fa;
       color: #11111b; border: none; border-radius: 4px; font-weight: bold; cursor: pointer;
     }
-    button.start {
-      background: #a6e3a1; color: #11111b; margin-top: 12px; font-size: 13px;
-    }
+    button.start { background: #a6e3a1; color: #11111b; margin-top: 12px; font-size: 13px; }
+    button.icon { width: auto; margin-top: 4px; padding: 6px 10px; background: #45475a; color: #cdd6f4; }
     button:hover { opacity: 0.9; }
     hr { border: 0; border-top: 1px solid #313244; margin: 12px 0; }
-    .status { margin-top: 8px; font-size: 12px; text-align: center; color: #f9e2af; }
+    .row { display: flex; gap: 6px; align-items: flex-end; }
+    .row select { flex: 1; }
+    .status { margin-top: 8px; font-size: 12px; text-align: center; color: #f9e2af; word-break: break-word; }
+    .hint { font-size: 10px; color: #7f849c; margin-top: 4px; }
     .hidden { display: none; }
     .box { background: #181825; padding: 8px; border-radius: 6px; margin-top: 8px; border: 1px solid #313244; }
   </style>
@@ -46,10 +49,19 @@
 
   <hr />
 
-  <label>WebSocket Adresi</label>
-  <input type="text" id="wsUrl" value="ws://127.0.0.1:8766" />
-  <label>Güvenlik Token'ı</label>
-  <input type="password" id="token" value="mcp-gizli-anahtar-2026" />
+  <button id="pairBtn">🔗 VS Code ile Eşleştir</button>
+  <div class="hint">Eşleştirince VS Code'da çıkan pencerede "İzin Ver"e basın; token otomatik girilir.</div>
+
+  <label>Bağlantı Token'ı (elle giriş)</label>
+  <input type="password" id="token" placeholder="VS Code panelindeki 🔑 butonuyla kopyalayın" autocomplete="off" />
+
+  <label>VS Code Projesi</label>
+  <div class="row">
+    <select id="workspaceSelect"><option value="">Otomatik (ilk bulunan)</option></select>
+    <button id="scanBtn" class="icon" title="Açık VS Code pencerelerini tara">🔍</button>
+  </div>
+  <div class="hint">Birden fazla VS Code penceresi açıksa 🔍 ile tarayıp doğru projeyi seçin.</div>
+
   <label><input type="checkbox" id="autoSend" checked /> Yanıtları AI'a otomatik gönder</label>
   <button id="saveBtn">Ayarları Kaydet ve Bağlan</button>
 

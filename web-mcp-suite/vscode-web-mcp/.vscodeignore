@@ -1,0 +1,5 @@
+test/**
+.mcp/**
+**/*.map
+**/.DS_Store
+.vscode/**
